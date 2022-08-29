@@ -73,9 +73,8 @@ def classify_spectrum(target_domain, target_spectrum):
                            (target_domain <= max(int_domain)))[0]
     target_spectrum = target_spectrum[int_dom_ind]
 
-    # normalize and scale target spectrum
+    # normalize target spectrum
     target_spectrum = target_spectrum / simpson(target_spectrum, int_domain)
-    target_spectrum = scaler.transform(target_spectrum.reshape(1, -1))
 
     # ls coefficients and residual
     ls, res = nnls(int_spectra.T, target_spectrum.flatten(), maxiter=1000)
@@ -86,7 +85,10 @@ def classify_spectrum(target_domain, target_spectrum):
 
     # discard coefficients which contribute less than 20%
     perc = np.where((ls / np.sum(ls)) <= .2, 0, ls)
-    perc = np.nan_to_num(perc / np.sum(perc), nan=-1)
+    if np.sum(ls) == 0:
+        perc = -1 * np.ones(ls.shape[0])
+    else:    
+        perc = np.nan_to_num(perc / np.sum(perc), nan=-1)
     
     return perc, labels
 
@@ -113,11 +115,6 @@ def classify_sample(sample_file):
     norm_sample_spectra = simpson(sample_spectra, int_domain)
     sample_spectra = sample_spectra / norm_sample_spectra[:, None]
 
-    # scale between 0 and 1 every spectral line of the reference spectra
-    scaler = MinMaxScaler().fit(int_spectra)
-    int_spectra = scaler.transform(int_spectra)
-    sample_spectra = scaler.transform(sample_spectra)
-
     percs = []
     for spectrum in sample_spectra:
         # ls coefficients and residual
@@ -125,10 +122,17 @@ def classify_sample(sample_file):
 
         # discard coefficients if res > 3
         if res > 3:
-            ls = np.zeros(ls.shape[0])
+            percs.append(-1 * np.ones(ls.shape[0]))
+            continue
 
         # discard coefficients which contribute less than 20%
         ls = np.where((ls / np.sum(ls)) <= .2, 0, ls)
-        percs.append(np.nan_to_num(ls / np.sum(ls), nan=-1))
+        
+        # check if no coefficient is > 0
+        if np.sum(ls) == 0:
+            percs.append(-1 * np.ones(ls.shape[0]))
+            continue
+
+        percs.append(ls / np.sum(ls))
 
     return percs, labels
